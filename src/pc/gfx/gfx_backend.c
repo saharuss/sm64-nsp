@@ -8,7 +8,7 @@
 #include <limits.h>
 
 #ifndef _LANGUAGE_C
-# define _LANGUAGE_C
+#define _LANGUAGE_C
 #endif
 #include <PR/gbi.h>
 
@@ -18,6 +18,7 @@
 #include "macros.h"
 
 #include "pc/fixed_pt.h"
+#include "pc/configfile.h"
 
 #define ALIGN(x, a) (((x) + (a - 1)) & ~(a - 1))
 
@@ -26,7 +27,7 @@
 
 enum WrapType {
     WRAP_REPEAT = 0,
-    WRAP_CLAMP  = 1,
+    WRAP_CLAMP = 1,
     WRAP_MIRROR = 2,
 };
 
@@ -37,36 +38,50 @@ enum DrawFlags {
 };
 
 enum MixType {
-    SH_MT_NONE            = 0,
-    SH_MT_COLOR           = 1 << 0,
-    SH_MT_COLOR_COLOR     = 1 << 1,
-    SH_MT_TEXTURE         = 1 << 2,
-    SH_MT_TEXTURE_COLOR   = 1 << 3,
+    SH_MT_NONE = 0,
+    SH_MT_COLOR = 1 << 0,
+    SH_MT_COLOR_COLOR = 1 << 1,
+    SH_MT_TEXTURE = 1 << 2,
+    SH_MT_TEXTURE_COLOR = 1 << 3,
     SH_MT_TEXTURE_TEXTURE = 1 << 4,
 };
 
-typedef union Vector2 { 
-    struct { fix64 x, y; };
-    struct { fix64 u, v; };
+typedef union Vector2 {
+    struct {
+        fix64 x, y;
+    };
+    struct {
+        fix64 u, v;
+    };
 } Vector2;
 
 typedef union Vector3 {
-    struct { fix64 r, g, b; };
-    struct { fix64 x, y, z; };
+    struct {
+        fix64 r, g, b;
+    };
+    struct {
+        fix64 x, y, z;
+    };
     Vector2 xy;
     fix64 v[3];
 } Vector3;
 
 typedef union Vector4 {
-    struct { fix64 r, g, b, a; };
-    struct { fix64 x, y, z, w; };
+    struct {
+        fix64 r, g, b, a;
+    };
+    struct {
+        fix64 x, y, z, w;
+    };
     Vector2 xy;
     Vector3 xyz;
     fix64 v[4];
 } Vector4;
 
 typedef union Color4 {
-    struct { uint8_t r, g, b, a; };
+    struct {
+        uint8_t r, g, b, a;
+    };
     uint32_t c;
 } Color4;
 
@@ -79,8 +94,9 @@ struct Tri {
 struct Texture;
 
 // texture sampling function: takes integer u,v and wraps/clamps it, samples texture, returns color
-typedef Color4 (*sample_fn_t)(const struct Texture * const, const int, const int);
-// pixel drawing function: does blending, zwriting, alpha edge checking or whatever else, then plots pixel
+typedef Color4 (*sample_fn_t)(const struct Texture *const, const int, const int);
+// pixel drawing function: does blending, zwriting, alpha edge checking or whatever else, then plots
+// pixel
 typedef void (*draw_fn_t)(const int idx, uint16_t uz, const Color4 src);
 // color combiner: takes float vertex properties and obtains final fragment color from them
 typedef Color4 (*combine_fn_t)(const fix64 z, const fix64 *props);
@@ -143,9 +159,9 @@ static struct Viewport r_view;
 
 static Color4 fog_color; // this is set by set_fog_color() calls from gfx_pc
 
-static bool z_test;        // whether to perform depth testing
-static bool z_write;       // whether to write into the Z buffer
-static fix64 z_offset;     // offset for decal mode
+static bool z_test;    // whether to perform depth testing
+static bool z_write;   // whether to write into the Z buffer
+static fix64 z_offset; // offset for decal mode
 static uint16_t *z_buffer;
 
 static int scr_width;
@@ -168,12 +184,12 @@ static const Vector2 dither_tab[2][2] = {
 
 /* math shit */
 
-static inline float fclamp01(const float v) {
-    return (v < 0.f) ? 0.f : (v > 1.f) ? 1.f : v;
+static inline fix64 fclamp01_fix(const fix64 v) {
+    return (v < 0) ? 0 : (v > FIX_ONE) ? FIX_ONE : v;
 }
 
 static inline uint16_t u16clamp(const int v) {
-    return (v < 0) ? (uint16_t)0 : (v > 0xFFFF) ? (uint16_t)0xFFFF : (uint16_t)v;
+    return (v < 0) ? (uint16_t) 0 : (v > 0xFFFF) ? (uint16_t) 0xFFFF : (uint16_t) v;
 }
 
 static inline int iwrap0w(const int x, const int wrap) {
@@ -188,8 +204,8 @@ static inline int imirror0w(const int x, const int wrap) {
     return iclamp0w(abs(x), wrap); // NOTE: this is not a universal solution
 }
 
-static inline float flerp(const float v0, const float v1, const float t) {
-    return v0 + t * (v1 - v0);
+static inline fix64 fix_lerp_val(const fix64 v0, const fix64 v1, const fix64 t) {
+    return v0 + fix_mult(t, v1 - v0);
 }
 
 static inline bool vec2_cmp(const Vector2 v1, const Vector2 v2) {
@@ -197,44 +213,44 @@ static inline bool vec2_cmp(const Vector2 v1, const Vector2 v2) {
 }
 
 static inline Vector4 vec4_sub(const Vector4 *v1, const Vector4 *v2) {
-    return (Vector4) {{ v1->x - v2->x, v1->y - v2->y, v1->z - v2->z, 1.f }};
+    return (Vector4) { { v1->x - v2->x, v1->y - v2->y, v1->z - v2->z, FIX_ONE } };
 }
 
-static inline Vector4 vec4_lerp(const Vector4 *v1, const Vector4 *v2, const float t) {
-    return (Vector4) {{
-        flerp(v1->x, v2->x, t),
-        flerp(v1->y, v2->y, t),
-        flerp(v1->z, v2->z, t),
-        flerp(v1->w, v2->w, t),
-    }};
+static inline Vector4 vec4_lerp_fix(const Vector4 *v1, const Vector4 *v2, const fix64 t) {
+    return (Vector4) { {
+        fix_lerp_val(v1->x, v2->x, t),
+        fix_lerp_val(v1->y, v2->y, t),
+        fix_lerp_val(v1->z, v2->z, t),
+        fix_lerp_val(v1->w, v2->w, t),
+    } };
 }
 
 static inline Color4 rgba_modulate(const Color4 c1, const Color4 c2) {
-    return (Color4) {{
+    return (Color4) { {
         .r = mult_tab[c1.r][c2.r],
         .g = mult_tab[c1.g][c2.g],
         .b = mult_tab[c1.b][c2.b],
         .a = mult_tab[c1.a][c2.a],
-    }};
+    } };
 }
 
 static inline Color4 rgba_blend(const Color4 src, const Color4 dst, const uint8_t a) {
     const uint8_t ia = 0xFF - a;
-    return (Color4) {{
+    return (Color4) { {
         .r = mult_tab[src.r][a] + mult_tab[dst.r][ia],
         .g = mult_tab[src.g][a] + mult_tab[dst.g][ia],
         .b = mult_tab[src.b][a] + mult_tab[dst.b][ia],
         .a = dst.a,
-    }};
+    } };
 }
 
 static inline Color4 rgba_lerp(const Color4 c1, const Color4 c2, const uint8_t t) {
-    return (Color4) {{
+    return (Color4) { {
         .r = c1.r + lerp_tab[t][0xFF + c2.r - c1.r],
         .g = c1.g + lerp_tab[t][0xFF + c2.g - c1.g],
         .b = c1.b + lerp_tab[t][0xFF + c2.b - c1.b],
         .a = c1.a + lerp_tab[t][0xFF + c2.a - c1.a],
-    }};
+    } };
 }
 
 static inline int imin(const int a, const int b) {
@@ -246,7 +262,8 @@ static inline int imax(const int a, const int b) {
 }
 
 static inline void viewport_transform(Vector4 *v) {
-    // gfx_pc.c with ENABLE_SOFTRAST defined will feed us with everything already pre-multiplied by inverse of w
+    // gfx_pc.c with ENABLE_SOFTRAST defined will feed us with everything already pre-multiplied by
+    // inverse of w
     v->x = fix_mult(v->x, r_view.hw) + r_view.cx + FIX_ONE_HALF;
     v->y = fix_mult(v->y, r_view.hh) + r_view.cy + FIX_ONE_HALF;
     // v->w is also already 1.f / v->w
@@ -254,53 +271,54 @@ static inline void viewport_transform(Vector4 *v) {
 
 /* texture sampling functions */
 
-static inline Color4 tex_get(const struct Texture * const tex, const int x, const int y) {
-    return (Color4) { .c = ((const uint32_t *)(texcache + tex->addr))[y * tex->w + x] };
+static inline Color4 tex_get(const struct Texture *const tex, const int x, const int y) {
+    return (Color4) { .c = ((const uint32_t *) (texcache + tex->addr))[y * tex->w + x] };
 }
 
-static Color4 tex_sample_nearest_rr(const struct Texture * const tex, const int x, const int y) {
+static Color4 tex_sample_nearest_rr(const struct Texture *const tex, const int x, const int y) {
     return tex_get(tex, iwrap0w(x, tex->wrap_w), iwrap0w(y, tex->wrap_h));
 }
 
-static Color4 tex_sample_nearest_rc(const struct Texture * const tex, const int x, const int y) {
+static Color4 tex_sample_nearest_rc(const struct Texture *const tex, const int x, const int y) {
     return tex_get(tex, iwrap0w(x, tex->wrap_w), iclamp0w(y, tex->wrap_h));
 }
 
-static Color4 tex_sample_nearest_rm(const struct Texture * const tex, const int x, const int y) {
+static Color4 tex_sample_nearest_rm(const struct Texture *const tex, const int x, const int y) {
     return tex_get(tex, iwrap0w(x, tex->wrap_w), imirror0w(y, tex->wrap_h));
 }
 
-static Color4 tex_sample_nearest_cc(const struct Texture * const tex, const int x, const int y) {
+static Color4 tex_sample_nearest_cc(const struct Texture *const tex, const int x, const int y) {
     return tex_get(tex, iclamp0w(x, tex->wrap_w), iclamp0w(y, tex->wrap_h));
 }
 
-static Color4 tex_sample_nearest_cr(const struct Texture * const tex, const int x, const int y) {
+static Color4 tex_sample_nearest_cr(const struct Texture *const tex, const int x, const int y) {
     return tex_get(tex, iclamp0w(x, tex->wrap_w), iwrap0w(y, tex->wrap_h));
 }
 
-static Color4 tex_sample_nearest_cm(const struct Texture * const tex, const int x, const int y) {
+static Color4 tex_sample_nearest_cm(const struct Texture *const tex, const int x, const int y) {
     return tex_get(tex, iclamp0w(x, tex->wrap_w), imirror0w(y, tex->wrap_h));
 }
 
-static Color4 tex_sample_nearest_mm(const struct Texture * const tex, const int x, const int y) {
+static Color4 tex_sample_nearest_mm(const struct Texture *const tex, const int x, const int y) {
     return tex_get(tex, imirror0w(x, tex->wrap_w), imirror0w(y, tex->wrap_h));
 }
 
-static Color4 tex_sample_nearest_mc(const struct Texture * const tex, const int x, const int y) {
+static Color4 tex_sample_nearest_mc(const struct Texture *const tex, const int x, const int y) {
     return tex_get(tex, imirror0w(x, tex->wrap_w), iclamp0w(y, tex->wrap_h));
 }
 
-static Color4 tex_sample_nearest_mr(const struct Texture * const tex, const int x, const int y) {
+static Color4 tex_sample_nearest_mr(const struct Texture *const tex, const int x, const int y) {
     return tex_get(tex, imirror0w(x, tex->wrap_w), iwrap0w(y, tex->wrap_h));
 }
 
-static inline Color4 tex_sample_linear(const struct Texture * const tex, const fix64 u, const fix64 v, const Vector2 d) {
+static inline Color4 tex_sample_linear(const struct Texture *const tex, const fix64 u, const fix64 v,
+                                       const Vector2 d) {
     const int x = FIX_2_INT(d.u + u * tex->w);
     const int y = FIX_2_INT(d.v + v * tex->h);
     return tex->sample(tex, x, y);
 }
 
-static inline Color4 tex_sample_nearest(const struct Texture * const tex, const fix64 u, const fix64 v) {
+static inline Color4 tex_sample_nearest(const struct Texture *const tex, const fix64 u, const fix64 v) {
     const int x = FIX_2_INT(u * tex->w);
     const int y = FIX_2_INT(v * tex->h);
     return tex->sample(tex, x, y);
@@ -311,46 +329,46 @@ static inline Color4 tex_sample_nearest(const struct Texture * const tex, const 
 #define tex_sample tex_sample_nearest
 
 static Color4 combine_rgb(const fix64 z, const fix64 *props) { // 3
-    return (Color4){ { .r = fix_mult_i32(props[0], z),
-                       .g = fix_mult_i32(props[1], z),
-                       .b = fix_mult_i32(props[2], z),
-                       .a = 0xFF } };
+    return (Color4) { { .r = fix_mult_i32(props[0], z),
+                        .g = fix_mult_i32(props[1], z),
+                        .b = fix_mult_i32(props[2], z),
+                        .a = 0xFF } };
 }
 
 static Color4 combine_rgba(const fix64 z, const fix64 *props) { // 4
-    return (Color4){ { .r = fix_mult_i32(props[0], z),
-                       .g = fix_mult_i32(props[1], z),
-                       .b = fix_mult_i32(props[2], z),
-                       .a = fix_mult_i32(props[3], z) } };
+    return (Color4) { { .r = fix_mult_i32(props[0], z),
+                        .g = fix_mult_i32(props[1], z),
+                        .b = fix_mult_i32(props[2], z),
+                        .a = fix_mult_i32(props[3], z) } };
 }
 
 static Color4 combine_fog_rgb(const fix64 z, const fix64 *props) { // 5
     const uint8_t fog = fix_mult_i32(props[0], z);
-    const Color4 c = (Color4){ { .r = fix_mult_i32(props[1], z),
-                                 .g = fix_mult_i32(props[2], z),
-                                 .b = fix_mult_i32(props[3], z),
-                                 .a = 0xFF } };
+    const Color4 c = (Color4) { { .r = fix_mult_i32(props[1], z),
+                                  .g = fix_mult_i32(props[2], z),
+                                  .b = fix_mult_i32(props[3], z),
+                                  .a = 0xFF } };
     return rgba_blend(fog_color, c, fog);
 }
 
 static Color4 combine_fog_rgba(const fix64 z, const fix64 *props) {
     const uint8_t fog = fix_mult_i32(props[0], z);
-    const Color4 c = (Color4){ { .r = fix_mult_i32(props[1], z),
-                                 .g = fix_mult_i32(props[2], z),
-                                 .b = fix_mult_i32(props[3], z),
-                                 .a = fix_mult_i32(props[4], z) } };
+    const Color4 c = (Color4) { { .r = fix_mult_i32(props[1], z),
+                                  .g = fix_mult_i32(props[2], z),
+                                  .b = fix_mult_i32(props[3], z),
+                                  .a = fix_mult_i32(props[4], z) } };
     return rgba_blend(fog_color, c, fog);
 }
 
 static Color4 combine_rgba_rgba(const fix64 z, const fix64 *props) {
-    const Color4 ca = (Color4){ { .r = fix_mult_i32(props[0], z),
-                                  .g = fix_mult_i32(props[1], z),
-                                  .b = fix_mult_i32(props[2], z),
-                                  .a = fix_mult_i32(props[3], z) } };
-    const Color4 cb = (Color4){ { .r = fix_mult_i32(props[4], z),
-                                  .g = fix_mult_i32(props[5], z),
-                                  .b = fix_mult_i32(props[6], z),
-                                  .a = fix_mult_i32(props[7], z) } };
+    const Color4 ca = (Color4) { { .r = fix_mult_i32(props[0], z),
+                                   .g = fix_mult_i32(props[1], z),
+                                   .b = fix_mult_i32(props[2], z),
+                                   .a = fix_mult_i32(props[3], z) } };
+    const Color4 cb = (Color4) { { .r = fix_mult_i32(props[4], z),
+                                   .g = fix_mult_i32(props[5], z),
+                                   .b = fix_mult_i32(props[6], z),
+                                   .a = fix_mult_i32(props[7], z) } };
     return rgba_modulate(ca, cb);
 }
 
@@ -366,79 +384,79 @@ static Color4 combine_tex_fog(const fix64 z, const fix64 *props) {
 
 static Color4 combine_tex_rgb(const fix64 z, const fix64 *props) {
     const Color4 tc = tex_sample(cur_tex[0], fix_mult(props[0], z), fix_mult(props[1], z));
-    const Color4 cc = (Color4){ { .r = fix_mult_i32(props[2], z),
-                                  .g = fix_mult_i32(props[3], z),
-                                  .b = fix_mult_i32(props[4], z),
-                                  .a = 0xFF } };
+    const Color4 cc = (Color4) { { .r = fix_mult_i32(props[2], z),
+                                   .g = fix_mult_i32(props[3], z),
+                                   .b = fix_mult_i32(props[4], z),
+                                   .a = 0xFF } };
     return rgba_modulate(tc, cc);
 }
 
 static Color4 combine_tex_fog_rgb(const fix64 z, const fix64 *props) {
     const Color4 tc = tex_sample(cur_tex[0], fix_mult(props[0], z), fix_mult(props[1], z));
     const uint8_t fog = fix_mult_i32(props[2], z);
-    const Color4 cc = (Color4){ { .r = fix_mult_i32(props[3], z),
-                                  .g = fix_mult_i32(props[4], z),
-                                  .b = fix_mult_i32(props[5], z),
-                                  .a = 0xFF } };
+    const Color4 cc = (Color4) { { .r = fix_mult_i32(props[3], z),
+                                   .g = fix_mult_i32(props[4], z),
+                                   .b = fix_mult_i32(props[5], z),
+                                   .a = 0xFF } };
     return rgba_blend(fog_color, rgba_modulate(tc, cc), fog);
 }
 
 static Color4 combine_tex_rgb_decal(const fix64 z, const fix64 *props) {
     const Color4 tc = tex_sample(cur_tex[0], fix_mult(props[0], z), fix_mult(props[1], z));
-    const Color4 cc = (Color4){ { .r = fix_mult_i32(props[2], z),
-                                  .g = fix_mult_i32(props[3], z),
-                                  .b = fix_mult_i32(props[4], z),
-                                  .a = 0xFF } };
+    const Color4 cc = (Color4) { { .r = fix_mult_i32(props[2], z),
+                                   .g = fix_mult_i32(props[3], z),
+                                   .b = fix_mult_i32(props[4], z),
+                                   .a = 0xFF } };
     return rgba_blend(tc, cc, tc.a);
 }
 
 static Color4 combine_tex_rgba(const fix64 z, const fix64 *props) {
     const Color4 tc = tex_sample(cur_tex[0], fix_mult(props[0], z), fix_mult(props[1], z));
-    const Color4 cc = (Color4){ { .r = fix_mult_i32(props[2], z),
-                                  .g = fix_mult_i32(props[3], z),
-                                  .b = fix_mult_i32(props[4], z),
-                                  .a = fix_mult_i32(props[5], z) } };
+    const Color4 cc = (Color4) { { .r = fix_mult_i32(props[2], z),
+                                   .g = fix_mult_i32(props[3], z),
+                                   .b = fix_mult_i32(props[4], z),
+                                   .a = fix_mult_i32(props[5], z) } };
     return rgba_modulate(tc, cc);
 }
 
 static Color4 combine_tex_rgba_texa(const fix64 z, const fix64 *props) {
     const Color4 tc = tex_sample(cur_tex[0], fix_mult(props[0], z), fix_mult(props[1], z));
-    const Color4 cc = (Color4){ { .r = fix_mult_i32(props[2], z),
-                                  .g = fix_mult_i32(props[3], z),
-                                  .b = fix_mult_i32(props[4], z),
-                                  .a = 0xFF } };
+    const Color4 cc = (Color4) { { .r = fix_mult_i32(props[2], z),
+                                   .g = fix_mult_i32(props[3], z),
+                                   .b = fix_mult_i32(props[4], z),
+                                   .a = 0xFF } };
     return rgba_modulate(tc, cc);
 }
 
 static Color4 combine_tex_fog_rgba(const fix64 z, const fix64 *props) {
     const Color4 tc = tex_sample(cur_tex[0], fix_mult(props[0], z), fix_mult(props[1], z));
     const uint8_t fog = fix_mult_i32(props[2], z);
-    const Color4 cc = (Color4){ { .r = fix_mult_i32(props[3], z),
-                                  .g = fix_mult_i32(props[4], z),
-                                  .b = fix_mult_i32(props[5], z),
-                                  .a = fix_mult_i32(props[6], z) } };
+    const Color4 cc = (Color4) { { .r = fix_mult_i32(props[3], z),
+                                   .g = fix_mult_i32(props[4], z),
+                                   .b = fix_mult_i32(props[5], z),
+                                   .a = fix_mult_i32(props[6], z) } };
     return rgba_blend(fog_color, rgba_modulate(tc, cc), fog);
 }
 
 static Color4 combine_tex_rgba_decal(const fix64 z, const fix64 *props) {
     const Color4 tc = tex_sample(cur_tex[0], fix_mult(props[0], z), fix_mult(props[1], z));
-    const Color4 cc = (Color4){ { .r = fix_mult_i32(props[2], z),
-                                  .g = fix_mult_i32(props[3], z),
-                                  .b = fix_mult_i32(props[4], z),
-                                  .a = fix_mult_i32(props[5], z) } };
+    const Color4 cc = (Color4) { { .r = fix_mult_i32(props[2], z),
+                                   .g = fix_mult_i32(props[3], z),
+                                   .b = fix_mult_i32(props[4], z),
+                                   .a = fix_mult_i32(props[5], z) } };
     return rgba_blend(tc, cc, tc.a);
 }
 
 static Color4 combine_tex_rgb_rgb(const fix64 z, const fix64 *props) {
     const Color4 tc = tex_sample(cur_tex[0], fix_mult(props[0], z), fix_mult(props[1], z));
-    const Color4 cc1 = (Color4){ { .r = fix_mult_i32(props[2], z),
-                                   .g = fix_mult_i32(props[3], z),
-                                   .b = fix_mult_i32(props[4], z),
-                                   .a = 0xFF } };
-    const Color4 cc2 = (Color4){ { .r = fix_mult_i32(props[5], z),
-                                   .g = fix_mult_i32(props[6], z),
-                                   .b = fix_mult_i32(props[7], z),
-                                   .a = 0xFF } };
+    const Color4 cc1 = (Color4) { { .r = fix_mult_i32(props[2], z),
+                                    .g = fix_mult_i32(props[3], z),
+                                    .b = fix_mult_i32(props[4], z),
+                                    .a = 0xFF } };
+    const Color4 cc2 = (Color4) { { .r = fix_mult_i32(props[5], z),
+                                    .g = fix_mult_i32(props[6], z),
+                                    .b = fix_mult_i32(props[7], z),
+                                    .a = 0xFF } };
     return rgba_lerp(cc2, cc1, tc.r);
 }
 
@@ -510,127 +528,179 @@ static void draw_pixel_blend_edge_zwrite(const int idx, const uint16_t z, Color4
 
 /* rasterizers */
 
-#define R_RASTERIZE_TRI_SEG(y_a, y_b, nprops) \
-    register int y = y_a; \
-    register int y_end = y_b; \
-    register int x, x_end; \
-    register int idx; \
-    fix64 dx, w; \
-    uint16_t uz; \
-    /* draw triangle segment from y_a to y_b */ \
-    while (y < y_end) { \
-        /* do scissor clipping */ \
-        x = imax(r_clip.x0, FIX_2_INT(x_a)); \
-        x_end = imin(r_clip.x1, FIX_2_INT(x_b)); \
-        /* do X subpixel prestepping */ \
-        dx = FIX_ONE - (x_a - INT_2_FIX(x)); \
-        for (i = 2; i < nprops; ++i) p[i] = p_a[i] + fix_mult(dx, dp[i].x); \
-        idx = scr_width * (scr_height - y - 1) + x; \
-        /* draw scanline from current x_a to current x_b */ \
-         while (x++ < x_end) { \
-            uz = u16clamp(FIX_2_INT(p[2] * 65535 + z_offset)); \
-            if (!z_test || uz <= z_buffer[idx]) { \
-                /* Improve efficiency here? w is 1 very often */ \
-                w = p[3] == FIX_ONE ? FIX_ONE : fix_div_s(FIX_ONE, p[3]); /*  the combiner will multiply by w any props it needs to persp correct */ \
-                draw_fn(idx, uz, cur_shader->combine(w, p + 4)); \
-            } \
-            for (i = 2; i < nprops; ++i) p[i] += dp[i].x; \
-            ++idx; \
-        } \
-        /* advance scanline start and end and prop starts */ \
-        x_a += dxdy_a; \
-        x_b += dxdy_b; \
-        for (i = 2; i < nprops; ++i) p_a[i] += dpdy_a[i]; \
-        ++y; \
+#define R_RASTERIZE_TRI_SEG(y_a, y_b, nprops)                                                          \
+    register int y = y_a;                                                                              \
+    register int y_end = y_b;                                                                          \
+    register int x, x_end;                                                                             \
+    register int idx;                                                                                  \
+    fix64 dx, w;                                                                                       \
+    uint16_t uz;                                                                                       \
+    /* draw triangle segment from y_a to y_b */                                                        \
+    while (y < y_end) {                                                                                \
+        /* do scissor clipping */                                                                      \
+        x = imax(r_clip.x0, FIX_2_INT(x_a));                                                           \
+        x_end = imin(r_clip.x1, FIX_2_INT(x_b));                                                       \
+        /* do X subpixel prestepping */                                                                \
+        dx = FIX_ONE - (x_a - INT_2_FIX(x));                                                           \
+        for (i = 2; i < nprops; ++i)                                                                   \
+            p[i] = p_a[i] + fix_mult(dx, dp[i].x);                                                     \
+        idx = scr_width * (scr_height - y - 1) + x;                                                    \
+        /* draw scanline from current x_a to current x_b */                                            \
+        if (configAffineMode) {                                                                        \
+            /* AFFINE MODE: skip perspective correction entirely */                                    \
+            while (x++ < x_end) {                                                                      \
+                uz = u16clamp(FIX_2_INT(p[2] * 65535 + z_offset));                                     \
+                if (!z_test || uz <= z_buffer[idx]) {                                                  \
+                    draw_fn(idx, uz, cur_shader->combine(FIX_ONE, p + 4));                             \
+                }                                                                                      \
+                for (i = 2; i < nprops; ++i)                                                           \
+                    p[i] += dp[i].x;                                                                   \
+                ++idx;                                                                                 \
+            }                                                                                          \
+        } else if (configPerspSpan > 1) {                                                              \
+            /* SPAN-BASED PERSPECTIVE: correct every N pixels, lerp between */                         \
+            int span = (int) configPerspSpan;                                                          \
+            int px_in_span = 0;                                                                        \
+            fix64 w_start = FIX_ONE, w_end = FIX_ONE;                                                  \
+            fix64 w_step = 0;                                                                          \
+            while (x++ < x_end) {                                                                      \
+                if (px_in_span == 0) {                                                                 \
+                    /* Compute exact 1/w at span start */                                              \
+                    w_start = p[3] == FIX_ONE ? FIX_ONE : fix_recip(p[3]);                             \
+                    /* Peek ahead to compute w at span end */                                          \
+                    fix64 p3_end = p[3] + dp[3].x * span;                                              \
+                    w_end = p3_end == FIX_ONE ? FIX_ONE : fix_recip(p3_end);                           \
+                    w_step = (w_end - w_start) / span;                                                 \
+                    w = w_start;                                                                       \
+                }                                                                                      \
+                uz = u16clamp(FIX_2_INT(p[2] * 65535 + z_offset));                                     \
+                if (!z_test || uz <= z_buffer[idx]) {                                                  \
+                    draw_fn(idx, uz, cur_shader->combine(w, p + 4));                                   \
+                }                                                                                      \
+                w += w_step;                                                                           \
+                for (i = 2; i < nprops; ++i)                                                           \
+                    p[i] += dp[i].x;                                                                   \
+                ++idx;                                                                                 \
+                if (++px_in_span >= span)                                                              \
+                    px_in_span = 0;                                                                    \
+            }                                                                                          \
+        } else {                                                                                       \
+            /* ORIGINAL: per-pixel perspective correction */                                           \
+            while (x++ < x_end) {                                                                      \
+                uz = u16clamp(FIX_2_INT(p[2] * 65535 + z_offset));                                     \
+                if (!z_test || uz <= z_buffer[idx]) {                                                  \
+                    w = p[3] == FIX_ONE ? FIX_ONE : fix_recip(p[3]);                                   \
+                    draw_fn(idx, uz, cur_shader->combine(w, p + 4));                                   \
+                }                                                                                      \
+                for (i = 2; i < nprops; ++i)                                                           \
+                    p[i] += dp[i].x;                                                                   \
+                ++idx;                                                                                 \
+            }                                                                                          \
+        }                                                                                              \
+        /* advance scanline start and end and prop starts */                                           \
+        x_a += dxdy_a;                                                                                 \
+        x_b += dxdy_b;                                                                                 \
+        for (i = 2; i < nprops; ++i)                                                                   \
+            p_a[i] += dpdy_a[i];                                                                       \
+        ++y;                                                                                           \
     }
 
-#define R_RASTERIZE(tri, nprops) \
-    const fix64 *v0 = (fix64 *) tri.v0; \
-    const fix64 *v1 = (fix64 *) tri.v1; \
-    const fix64 *v2 = (fix64 *) tri.v2; \
-    const int y0i = imax(r_clip.y0, FIX_2_INT(v0[1])); \
-    const int y1i = imax(y0i, FIX_2_INT(v1[1])); \
-    const int y2i = imin(r_clip.y1, FIX_2_INT(v2[1])); \
-    if ((y0i == y1i && y0i == y2i) || (FIX_2_INT(v0[0]) == FIX_2_INT(v1[0]) && FIX_2_INT(v0[0]) == FIX_2_INT(v2[0]))) \
-        return; /* triangle has zero area */  \
-    const Vector4 ab = (Vector4) {{ v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2], v1[3] - v0[3] }}; \
-    const Vector4 ac = (Vector4) {{ v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2], v2[3] - v0[3] }}; \
-    const Vector2 bc = (Vector2) {{ v2[0] - v1[0], v2[1] - v1[1] }}; \
-    const fix64 denom = fix_div_s(FIX_ONE, fix_mult(ac.x, ab.y) - fix_mult(ab.x, ac.y)); \
-    const fix64 dxdy_ab = ab.y != 0 ? fix_div_s(ab.x, ab.y) : ab.x > 0 ? FIX_MAX : FIX_MIN; /* x increment along ab */ \
-    const fix64 dxdy_ac = ac.y != 0 ? fix_div_s(ac.x, ac.y) : ac.x > 0 ? FIX_MAX : FIX_MIN; /* x increment along ac */ \
-    const fix64 dxdy_bc = bc.y != 0 ? fix_div_s(bc.x, bc.y) : bc.x > 0 ? FIX_MAX : FIX_MIN; /* PROTECT AGAINST DIV BY ZERO HERE */ \
-    const bool side = dxdy_ac > dxdy_ab; /* which side the longer edge (AC) is on */ \
-    const fix64 y_pre0 = FIX_ONE - (v0[1] - INT_2_FIX(y0i));  /* subpixel pre-step */ \
-    fix64 dpdy_a[nprops]; /* vertex prop increments along left edge */ \
-    fix64 p_a[nprops];    /* vertex leftmost points */ \
-    fix64 p[nprops];      /* current vertex prop values */ \
-    Vector2 dp[nprops]; /* X and Y increments for vertex props */ \
-    register int i; \
-    /* we'll interpolate z/w (p[2]), 1/w (p[3]) and the other properties (also divided by w) */ \
-    for (i = 2; i < nprops; ++i) { \
-        dp[i].x = fix_mult(fix_mult(v2[i] - v0[i], ab.y) - fix_mult(v1[i] - v0[i], ac.y), denom); \
-        dp[i].y = fix_mult(fix_mult(v1[i] - v0[i], ac.x) - fix_mult(v2[i] - v0[i], ab.x), denom); \
-    } \
-    if (!side) { \
-        /* longer edge is on the left */ \
-        const fix64 dxdy_a = dxdy_ac; \
-        /* first column of this scanline is on AC */ \
-        fix64 x_a = v0[0] + fix_mult(y_pre0, dxdy_a); \
-        for (i = 2; i < nprops; ++i) { \
-            dpdy_a[i] = fix_mult(dxdy_ac, dp[i].x) + dp[i].y; \
-            p_a[i] = v0[i] + fix_mult(y_pre0, dpdy_a[i]); \
-        } \
-        if (y0i < y1i) { \
-            /* left is AC, right is AB */ \
-            const fix64 dxdy_b = dxdy_ab; \
-            /* last column of this scanline */ \
-            fix64 x_b = v0[0] + fix_mult(y_pre0, dxdy_ab); \
-            R_RASTERIZE_TRI_SEG(y0i, y1i, nprops); \
-        } \
-        if (y1i < y2i) { \
-            /* left is AC, right is BC */ \
-            const fix64 dxdy_b = dxdy_bc; \
-            /* calculate prestep for vertex B */ \
-            const fix64 y_pre1 = FIX_ONE - (v1[1] - INT_2_FIX(y1i)); \
-            fix64 x_b = v1[0] + fix_mult(y_pre1, dxdy_bc); \
-            R_RASTERIZE_TRI_SEG(y1i, y2i, nprops); \
-        } \
-    } else { \
-        /* longer edge is on the right */ \
-        const fix64 dxdy_b = dxdy_ac; \
-        /* last column of this scanline is on AC */ \
-        fix64 x_b = v0[0] + fix_mult(y_pre0, dxdy_ac); \
-        if (y0i < y1i) { \
-            /* right is AC, left is AB */ \
-            const fix64 dxdy_a = dxdy_ab; \
-            fix64 x_a = v0[0] + fix_mult(y_pre0, dxdy_a); \
-            for (i = 2; i < nprops; ++i) { \
-                dpdy_a[i] = fix_mult(dxdy_ab, dp[i].x) + dp[i].y; \
-                p_a[i] = v0[i] + fix_mult(y_pre0, dpdy_a[i]); \
-            } \
-            R_RASTERIZE_TRI_SEG(y0i, y1i, nprops); \
-        } \
-        if (y1i < y2i) { \
-            /* right is AC, left is BC */ \
-            const fix64 y_pre1 = FIX_ONE - (v1[1] - INT_2_FIX(y1i)); \
-            const fix64 dxdy_a = dxdy_bc; \
-            fix64 x_a = v1[0] + fix_mult(y_pre1, dxdy_a); \
-            for (i = 2; i < nprops; ++i) { \
-                dpdy_a[i] = fix_mult(dxdy_bc, dp[i].x) + dp[i].y; \
-                p_a[i] = v1[i] + fix_mult(y_pre1, dpdy_a[i]); \
-            } \
-            R_RASTERIZE_TRI_SEG(y1i, y2i, nprops); \
-        } \
+#define R_RASTERIZE(tri, nprops)                                                                       \
+    const fix64 *v0 = (fix64 *) tri.v0;                                                                \
+    const fix64 *v1 = (fix64 *) tri.v1;                                                                \
+    const fix64 *v2 = (fix64 *) tri.v2;                                                                \
+    const int y0i = imax(r_clip.y0, FIX_2_INT(v0[1]));                                                 \
+    const int y1i = imax(y0i, FIX_2_INT(v1[1]));                                                       \
+    const int y2i = imin(r_clip.y1, FIX_2_INT(v2[1]));                                                 \
+    if ((y0i == y1i && y0i == y2i)                                                                     \
+        || (FIX_2_INT(v0[0]) == FIX_2_INT(v1[0]) && FIX_2_INT(v0[0]) == FIX_2_INT(v2[0])))             \
+        return; /* triangle has zero area */                                                           \
+    const Vector4 ab = (Vector4) { { v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2], v1[3] - v0[3] } };   \
+    const Vector4 ac = (Vector4) { { v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2], v2[3] - v0[3] } };   \
+    const Vector2 bc = (Vector2) { { v2[0] - v1[0], v2[1] - v1[1] } };                                 \
+    const fix64 denom = fix_div_s(FIX_ONE, fix_mult(ac.x, ab.y) - fix_mult(ab.x, ac.y));               \
+    const fix64 dxdy_ab = ab.y != 0  ? fix_div_s(ab.x, ab.y)                                           \
+                          : ab.x > 0 ? FIX_MAX                                                         \
+                                     : FIX_MIN; /* x increment along ab */                             \
+    const fix64 dxdy_ac = ac.y != 0  ? fix_div_s(ac.x, ac.y)                                           \
+                          : ac.x > 0 ? FIX_MAX                                                         \
+                                     : FIX_MIN; /* x increment along ac */                             \
+    const fix64 dxdy_bc = bc.y != 0  ? fix_div_s(bc.x, bc.y)                                           \
+                          : bc.x > 0 ? FIX_MAX                                                         \
+                                     : FIX_MIN; /* PROTECT AGAINST DIV BY ZERO HERE */                 \
+    const bool side = dxdy_ac > dxdy_ab;        /* which side the longer edge (AC) is on */            \
+    const fix64 y_pre0 = FIX_ONE - (v0[1] - INT_2_FIX(y0i)); /* subpixel pre-step */                   \
+    fix64 dpdy_a[nprops]; /* vertex prop increments along left edge */                                 \
+    fix64 p_a[nprops];    /* vertex leftmost points */                                                 \
+    fix64 p[nprops];      /* current vertex prop values */                                             \
+    Vector2 dp[nprops];   /* X and Y increments for vertex props */                                    \
+    register int i;                                                                                    \
+    /* we'll interpolate z/w (p[2]), 1/w (p[3]) and the other properties (also divided by w) */        \
+    for (i = 2; i < nprops; ++i) {                                                                     \
+        dp[i].x = fix_mult(fix_mult(v2[i] - v0[i], ab.y) - fix_mult(v1[i] - v0[i], ac.y), denom);      \
+        dp[i].y = fix_mult(fix_mult(v1[i] - v0[i], ac.x) - fix_mult(v2[i] - v0[i], ab.x), denom);      \
+    }                                                                                                  \
+    if (!side) {                                                                                       \
+        /* longer edge is on the left */                                                               \
+        const fix64 dxdy_a = dxdy_ac;                                                                  \
+        /* first column of this scanline is on AC */                                                   \
+        fix64 x_a = v0[0] + fix_mult(y_pre0, dxdy_a);                                                  \
+        for (i = 2; i < nprops; ++i) {                                                                 \
+            dpdy_a[i] = fix_mult(dxdy_ac, dp[i].x) + dp[i].y;                                          \
+            p_a[i] = v0[i] + fix_mult(y_pre0, dpdy_a[i]);                                              \
+        }                                                                                              \
+        if (y0i < y1i) {                                                                               \
+            /* left is AC, right is AB */                                                              \
+            const fix64 dxdy_b = dxdy_ab;                                                              \
+            /* last column of this scanline */                                                         \
+            fix64 x_b = v0[0] + fix_mult(y_pre0, dxdy_ab);                                             \
+            R_RASTERIZE_TRI_SEG(y0i, y1i, nprops);                                                     \
+        }                                                                                              \
+        if (y1i < y2i) {                                                                               \
+            /* left is AC, right is BC */                                                              \
+            const fix64 dxdy_b = dxdy_bc;                                                              \
+            /* calculate prestep for vertex B */                                                       \
+            const fix64 y_pre1 = FIX_ONE - (v1[1] - INT_2_FIX(y1i));                                   \
+            fix64 x_b = v1[0] + fix_mult(y_pre1, dxdy_bc);                                             \
+            R_RASTERIZE_TRI_SEG(y1i, y2i, nprops);                                                     \
+        }                                                                                              \
+    } else {                                                                                           \
+        /* longer edge is on the right */                                                              \
+        const fix64 dxdy_b = dxdy_ac;                                                                  \
+        /* last column of this scanline is on AC */                                                    \
+        fix64 x_b = v0[0] + fix_mult(y_pre0, dxdy_ac);                                                 \
+        if (y0i < y1i) {                                                                               \
+            /* right is AC, left is AB */                                                              \
+            const fix64 dxdy_a = dxdy_ab;                                                              \
+            fix64 x_a = v0[0] + fix_mult(y_pre0, dxdy_a);                                              \
+            for (i = 2; i < nprops; ++i) {                                                             \
+                dpdy_a[i] = fix_mult(dxdy_ab, dp[i].x) + dp[i].y;                                      \
+                p_a[i] = v0[i] + fix_mult(y_pre0, dpdy_a[i]);                                          \
+            }                                                                                          \
+            R_RASTERIZE_TRI_SEG(y0i, y1i, nprops);                                                     \
+        }                                                                                              \
+        if (y1i < y2i) {                                                                               \
+            /* right is AC, left is BC */                                                              \
+            const fix64 y_pre1 = FIX_ONE - (v1[1] - INT_2_FIX(y1i));                                   \
+            const fix64 dxdy_a = dxdy_bc;                                                              \
+            fix64 x_a = v1[0] + fix_mult(y_pre1, dxdy_a);                                              \
+            for (i = 2; i < nprops; ++i) {                                                             \
+                dpdy_a[i] = fix_mult(dxdy_bc, dp[i].x) + dp[i].y;                                      \
+                p_a[i] = v1[i] + fix_mult(y_pre1, dpdy_a[i]);                                          \
+            }                                                                                          \
+            R_RASTERIZE_TRI_SEG(y1i, y2i, nprops);                                                     \
+        }                                                                                              \
     }
 
 // define a bunch of rasterizers/interpolators for known property counts
 // nprops includes XYZW
 
-#define DEFINE_RAST_FUNC(nprops) \
-    static void rast_fn_ ## nprops (const struct Tri tri) { R_RASTERIZE(tri, nprops); }
+#define DEFINE_RAST_FUNC(nprops)                                                                       \
+    static void rast_fn_##nprops(const struct Tri tri) {                                               \
+        R_RASTERIZE(tri, nprops);                                                                      \
+    }
 
-#define GET_RAST_FUNC(nprops) rast_fn_ ## nprops
+#define GET_RAST_FUNC(nprops) rast_fn_##nprops
 
 DEFINE_RAST_FUNC(6)
 DEFINE_RAST_FUNC(7)
@@ -643,9 +713,9 @@ DEFINE_RAST_FUNC(13)
 DEFINE_RAST_FUNC(14)
 
 static inline void pop_triangle(const fix64 *buf, const int stride) {
-    Vector4 *v0 = (Vector4 *)buf;
-    Vector4 *v1 = (Vector4 *)(buf + stride);
-    Vector4 *v2 = (Vector4 *)(buf + (stride << 1));
+    Vector4 *v0 = (Vector4 *) buf;
+    Vector4 *v1 = (Vector4 *) (buf + stride);
+    Vector4 *v2 = (Vector4 *) (buf + (stride << 1));
     Vector4 *vt;
 
     // the vertices come to us in clip space, but already divided by w, still gotta transform
@@ -654,11 +724,23 @@ static inline void pop_triangle(const fix64 *buf, const int stride) {
     viewport_transform(v2);
 
     // sort in Y order
-    if (v0->y > v1->y) { vt = v0; v0 = v1; v1 = vt; }
-    if (v0->y > v2->y) { vt = v0; v0 = v2; v2 = vt; }
-    if (v1->y > v2->y) { vt = v1; v1 = v2; v2 = vt; }
+    if (v0->y > v1->y) {
+        vt = v0;
+        v0 = v1;
+        v1 = vt;
+    }
+    if (v0->y > v2->y) {
+        vt = v0;
+        v0 = v2;
+        v2 = vt;
+    }
+    if (v1->y > v2->y) {
+        vt = v1;
+        v1 = v2;
+        v2 = vt;
+    }
 
-    const struct Tri out = (struct Tri) { (fix64 *)v0, (fix64 *)v1, (fix64 *)v2 };
+    const struct Tri out = (struct Tri) { (fix64 *) v0, (fix64 *) v1, (fix64 *) v2 };
     cur_shader->rast(out);
 }
 
@@ -727,7 +809,8 @@ static struct ShaderProgram *gfx_soft_create_and_load_new_shader(uint32_t shader
 
     int num_props = 0;
 
-    if (ccf.opt_fog) num_props++; // software renderer only gets fog intensity
+    if (ccf.opt_fog)
+        num_props++; // software renderer only gets fog intensity
 
     num_props += ccf.num_inputs * (ccf.opt_alpha ? 4 : 3);
     num_props += ccf.used_textures[0] * 2;
@@ -778,7 +861,8 @@ static struct ShaderProgram *gfx_soft_create_and_load_new_shader(uint32_t shader
 
     return prg;
 }
-#pragma GCC push_options // BANDAID FIX: compiling this function with any other optimization level crashes the emulator for some reason
+#pragma GCC push_options // BANDAID FIX: compiling this function with any other optimization level
+                         // crashes the emulator for some reason
 #pragma GCC optimize("-Og")
 static struct ShaderProgram *gfx_soft_lookup_shader(uint32_t shader_id) {
     for (size_t i = 0; i < shader_program_pool_size; i++)
@@ -788,7 +872,8 @@ static struct ShaderProgram *gfx_soft_lookup_shader(uint32_t shader_id) {
 }
 #pragma GCC pop_options
 
-static void gfx_soft_shader_get_info(struct ShaderProgram *prg, uint8_t *num_inputs, bool used_textures[2]) {
+static void gfx_soft_shader_get_info(struct ShaderProgram *prg, uint8_t *num_inputs,
+                                     bool used_textures[2]) {
     *num_inputs = prg->cc.num_inputs;
     used_textures[0] = prg->cc.used_textures[0];
     used_textures[1] = prg->cc.used_textures[1];
@@ -842,7 +927,8 @@ static void gfx_soft_upload_texture(const uint8_t *rgba32_buf, int width, int he
 }
 
 static inline int gfx_cm_to_local(uint32_t val) {
-    if (val & G_TX_CLAMP) return WRAP_CLAMP;
+    if (val & G_TX_CLAMP)
+        return WRAP_CLAMP;
     return (val & G_TX_MIRROR) ? WRAP_MIRROR : WRAP_REPEAT;
 }
 
@@ -869,7 +955,7 @@ static void gfx_soft_set_sampler_parameters(int tile, bool linear_filter, uint32
 }
 
 static void gfx_soft_set_depth_test(bool depth_test) {
-    z_test = depth_test;
+    z_test = configSkipZTest ? false : depth_test;
 }
 
 static void gfx_soft_set_depth_mask(bool z_upd) {
@@ -924,18 +1010,19 @@ static inline void gfx_soft_pick_draw_func(void) {
 static void gfx_soft_draw_triangles(fix64 buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris) {
     gfx_soft_pick_draw_func();
     const size_t num_verts = 3 * buf_vbo_num_tris;
-    const size_t stride = buf_vbo_len / num_verts; //how many props per vertex
+    const size_t stride = buf_vbo_len / num_verts; // how many props per vertex
     for (size_t i = 0; i < num_verts * stride; i += 3 * stride)
         pop_triangle(buf_vbo + i, stride);
 }
 
 static void gfx_soft_fill_rect(int x0, int y0, int x1, int y1, const uint8_t *rgba) {
-    // HACK: these are mainly used just to clear the screen and draw simple rects, so we ignore drawmode stuff and Z
+    // HACK: these are mainly used just to clear the screen and draw simple rects, so we ignore drawmode
+    // stuff and Z
     x0 = imax(0, x0);
     y0 = imax(0, y0);
     x1 = imin(scr_width, x1);
     y1 = imin(scr_height, y1);
-    register const uint32_t color = *(uint32_t *)rgba;
+    register const uint32_t color = *(uint32_t *) rgba;
     register uint32_t *base = gfx_output + y0 * scr_width + x0;
     register uint32_t *p;
     register int x, y;
@@ -946,12 +1033,13 @@ static void gfx_soft_fill_rect(int x0, int y0, int x1, int y1, const uint8_t *rg
     }
 }
 
-static inline void gfx_soft_tex_rect_replace(int x0, int y0, int x1, int y1, const float u0, const float v0, const float dudx, const float dvdy) {
+static inline void gfx_soft_tex_rect_replace(int x0, int y0, int x1, int y1, const fix64 u0,
+                                             const fix64 v0, const fix64 dudx, const fix64 dvdy) {
     register int base = y0 * scr_width + x0;
     register int idx;
     register int x, y;
-    float u;
-    float v = v0;
+    fix64 u;
+    fix64 v = v0;
     for (y = y0; y < y1; ++y, base += scr_width, v += dvdy) {
         idx = base;
         u = u0;
@@ -960,12 +1048,14 @@ static inline void gfx_soft_tex_rect_replace(int x0, int y0, int x1, int y1, con
     }
 }
 
-static inline void gfx_soft_tex_rect_modulate(int x0, int y0, int x1, int y1, const float u0, const float v0, const float dudx, const float dvdy, const Color4 rgba) {
+static inline void gfx_soft_tex_rect_modulate(int x0, int y0, int x1, int y1, const fix64 u0,
+                                              const fix64 v0, const fix64 dudx, const fix64 dvdy,
+                                              const Color4 rgba) {
     register int base = y0 * scr_width + x0;
     register int idx;
     register int x, y;
-    float u;
-    float v = v0;
+    fix64 u;
+    fix64 v = v0;
     for (y = y0; y < y1; ++y, base += scr_width, v += dvdy) {
         idx = base;
         u = u0;
@@ -974,23 +1064,29 @@ static inline void gfx_soft_tex_rect_modulate(int x0, int y0, int x1, int y1, co
     }
 }
 
-static void gfx_soft_tex_rect(int x0, int y0, int x1, int y1, const float u0, const float v0, const float dudx, const float dvdy, const uint8_t *rgba) {
+static void gfx_soft_tex_rect(int x0, int y0, int x1, int y1, const float u0, const float v0,
+                              const float dudx, const float dvdy, const uint8_t *rgba) {
     x0 = imax(0, x0);
     y0 = imax(0, y0);
     x1 = imin(scr_width, x1);
     y1 = imin(scr_height, y1);
     gfx_soft_pick_draw_func();
+    // Convert float UV params to fixed-point once at entry, then use integer math in inner loops
+    const fix64 fu0 = FLOAT_2_FIX(u0);
+    const fix64 fv0 = FLOAT_2_FIX(v0);
+    const fix64 fdudx = FLOAT_2_FIX(dudx);
+    const fix64 fdvdy = FLOAT_2_FIX(dvdy);
     if (cur_shader->cc.num_inputs)
-        gfx_soft_tex_rect_modulate(x0, y0, x1, y1, u0, v0, dudx, dvdy, *(Color4 *)rgba);
+        gfx_soft_tex_rect_modulate(x0, y0, x1, y1, fu0, fv0, fdudx, fdvdy, *(Color4 *) rgba);
     else
-        gfx_soft_tex_rect_replace(x0, y0, x1, y1, u0, v0, dudx, dvdy);
+        gfx_soft_tex_rect_replace(x0, y0, x1, y1, fu0, fv0, fdudx, fdvdy);
 }
 
 static void gfx_soft_prepare_tables(void) {
     for (int t = 0; t < 0x100; ++t) {
         for (int i = 0, sum = 0; i < 0x100; ++i, sum += t) {
-            lerp_tab[t][0xFF - i] = (uint8_t)(-sum >> 8);
-            lerp_tab[t][0xFF + i] = (uint8_t)( sum >> 8);
+            lerp_tab[t][0xFF - i] = (uint8_t) (-sum >> 8);
+            lerp_tab[t][0xFF + i] = (uint8_t) (sum >> 8);
         }
     }
 
@@ -1000,8 +1096,10 @@ static void gfx_soft_prepare_tables(void) {
 }
 
 static void gfx_soft_set_resolution(const int width, const int height) {
-    if (z_buffer) free(z_buffer);
-    if (gfx_output) free(gfx_output);
+    if (z_buffer)
+        free(z_buffer);
+    if (gfx_output)
+        free(gfx_output);
 
     scr_width = width;
     scr_height = height;
@@ -1061,31 +1159,17 @@ static void gfx_soft_finish_render(void) {
 }
 
 struct GfxRenderingAPI gfx_soft_api = {
-    gfx_soft_z_is_from_0_to_1,
-    gfx_soft_unload_shader,
-    gfx_soft_load_shader,
-    gfx_soft_create_and_load_new_shader,
-    gfx_soft_lookup_shader,
-    gfx_soft_shader_get_info,
-    gfx_soft_new_texture,
-    gfx_soft_select_texture,
-    gfx_soft_upload_texture,
-    gfx_soft_set_sampler_parameters,
-    gfx_soft_set_depth_test,
-    gfx_soft_set_depth_mask,
-    gfx_soft_set_zmode_decal,
-    gfx_soft_set_viewport,
-    gfx_soft_set_scissor,
-    gfx_soft_set_use_alpha,
-    gfx_soft_draw_triangles,
-    gfx_soft_init,
-    gfx_soft_on_resize,
-    gfx_soft_start_frame,
-    gfx_soft_end_frame,
-    gfx_soft_finish_render,
-    gfx_soft_fill_rect,
-    gfx_soft_tex_rect,
-    gfx_soft_set_fog_color,
-    gfx_soft_shutdown,
+    gfx_soft_z_is_from_0_to_1, gfx_soft_unload_shader,
+    gfx_soft_load_shader,      gfx_soft_create_and_load_new_shader,
+    gfx_soft_lookup_shader,    gfx_soft_shader_get_info,
+    gfx_soft_new_texture,      gfx_soft_select_texture,
+    gfx_soft_upload_texture,   gfx_soft_set_sampler_parameters,
+    gfx_soft_set_depth_test,   gfx_soft_set_depth_mask,
+    gfx_soft_set_zmode_decal,  gfx_soft_set_viewport,
+    gfx_soft_set_scissor,      gfx_soft_set_use_alpha,
+    gfx_soft_draw_triangles,   gfx_soft_init,
+    gfx_soft_on_resize,        gfx_soft_start_frame,
+    gfx_soft_end_frame,        gfx_soft_finish_render,
+    gfx_soft_fill_rect,        gfx_soft_tex_rect,
+    gfx_soft_set_fog_color,    gfx_soft_shutdown,
 };
-

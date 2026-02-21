@@ -3,10 +3,16 @@
 
 #include <stdbool.h>
 
-extern bool         configDrawSky;
-extern bool         configFiltering;
-extern bool         configEnableFog;
-extern bool			config120pMode;
+extern bool configDrawSky;
+extern bool configFiltering;
+extern bool configEnableFog;
+extern bool config120pMode;
+extern bool config80pMode;
+extern bool configSkipZTest;
+extern bool configAffineMode;
+extern bool configOverclock;
+extern unsigned int configPerspSpan;
+extern unsigned int configFlatShadeDist;
 extern unsigned int configFrameskip;
 extern unsigned int configKeyA;
 extern unsigned int configKeyB;

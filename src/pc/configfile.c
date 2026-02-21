@@ -29,64 +29,76 @@ struct ConfigOption {
 /*
  *Config options and default values
  */
-bool configDrawSky               = true;
-bool configFiltering             = false;
-bool configEnableFog             = false;
-bool config120pMode              = true;
-unsigned int configFrameskip     = 4; // worst case scenario, renders 1 out of every (X + 1) frames
+bool configDrawSky = true;
+bool configFiltering = false;
+bool configEnableFog = false;
+bool config120pMode = true;
+bool config80pMode = false;
+bool configSkipZTest = false;
+bool configAffineMode = false;
+bool configOverclock = true;
+unsigned int configPerspSpan = 8;     // perspective correct every N pixels (0 = every pixel)
+unsigned int configFlatShadeDist = 0; // distance threshold for flat shading (0 = disabled)
+unsigned int configFrameskip = 4;     // worst case scenario, renders 1 out of every (X + 1) frames
 
 // Keyboard mappings (scancode values)
 #ifdef TARGET_DOS
 // Allegro scancodes
-unsigned int configKeyA          = 12;
-unsigned int configKeyB          = 72;
-unsigned int configKeyStart      = 75;
-unsigned int configKeyR          = 116;
-unsigned int configKeyZ          = 11;
-unsigned int configKeyCUp        = 84;
-unsigned int configKeyCDown      = 85;
-unsigned int configKeyCLeft      = 82;
-unsigned int configKeyCRight     = 83;
-unsigned int configKeyStickUp    = 23;
-unsigned int configKeyStickDown  = 19;
-unsigned int configKeyStickLeft  =  1;
-unsigned int configKeyStickRight =  4;
+unsigned int configKeyA = 12;
+unsigned int configKeyB = 72;
+unsigned int configKeyStart = 75;
+unsigned int configKeyR = 116;
+unsigned int configKeyZ = 11;
+unsigned int configKeyCUp = 84;
+unsigned int configKeyCDown = 85;
+unsigned int configKeyCLeft = 82;
+unsigned int configKeyCRight = 83;
+unsigned int configKeyStickUp = 23;
+unsigned int configKeyStickDown = 19;
+unsigned int configKeyStickLeft = 1;
+unsigned int configKeyStickRight = 4;
 #else
 // DInput scancodes
-unsigned int configKeyA          = 0x26;
-unsigned int configKeyB          = 0x33;
-unsigned int configKeyStart      = 0x39;
-unsigned int configKeyR          = 0x36;
-unsigned int configKeyZ          = 0x25;
-unsigned int configKeyCUp        = 0x148;
-unsigned int configKeyCDown      = 0x150;
-unsigned int configKeyCLeft      = 0x14B;
-unsigned int configKeyCRight     = 0x14D;
-unsigned int configKeyStickUp    = 0x11;
-unsigned int configKeyStickDown  = 0x1F;
-unsigned int configKeyStickLeft  = 0x1E;
+unsigned int configKeyA = 0x26;
+unsigned int configKeyB = 0x33;
+unsigned int configKeyStart = 0x39;
+unsigned int configKeyR = 0x36;
+unsigned int configKeyZ = 0x25;
+unsigned int configKeyCUp = 0x148;
+unsigned int configKeyCDown = 0x150;
+unsigned int configKeyCLeft = 0x14B;
+unsigned int configKeyCRight = 0x14D;
+unsigned int configKeyStickUp = 0x11;
+unsigned int configKeyStickDown = 0x1F;
+unsigned int configKeyStickLeft = 0x1E;
 unsigned int configKeyStickRight = 0x20;
 #endif
 
 static const struct ConfigOption options[] = {
-    {.name = "draw_sky",          .type = CONFIG_TYPE_BOOL, .boolValue = &configDrawSky},
-    {.name = "texture_filtering", .type = CONFIG_TYPE_BOOL, .boolValue = &configFiltering},
-    {.name = "enable_fog",        .type = CONFIG_TYPE_BOOL, .boolValue = &configEnableFog},
-    {.name = "enable_120p_mode",  .type = CONFIG_TYPE_BOOL, .boolValue = &config120pMode},
-    {.name = "frameskip",         .type = CONFIG_TYPE_UINT, .uintValue = &configFrameskip},
-    {.name = "key_a",             .type = CONFIG_TYPE_UINT, .uintValue = &configKeyA},
-    {.name = "key_b",             .type = CONFIG_TYPE_UINT, .uintValue = &configKeyB},
-    {.name = "key_start",         .type = CONFIG_TYPE_UINT, .uintValue = &configKeyStart},
-    {.name = "key_r",             .type = CONFIG_TYPE_UINT, .uintValue = &configKeyR},
-    {.name = "key_z",             .type = CONFIG_TYPE_UINT, .uintValue = &configKeyZ},
-    {.name = "key_cup",           .type = CONFIG_TYPE_UINT, .uintValue = &configKeyCUp},
-    {.name = "key_cdown",         .type = CONFIG_TYPE_UINT, .uintValue = &configKeyCDown},
-    {.name = "key_cleft",         .type = CONFIG_TYPE_UINT, .uintValue = &configKeyCLeft},
-    {.name = "key_cright",        .type = CONFIG_TYPE_UINT, .uintValue = &configKeyCRight},
-    {.name = "key_stickup",       .type = CONFIG_TYPE_UINT, .uintValue = &configKeyStickUp},
-    {.name = "key_stickdown",     .type = CONFIG_TYPE_UINT, .uintValue = &configKeyStickDown},
-    {.name = "key_stickleft",     .type = CONFIG_TYPE_UINT, .uintValue = &configKeyStickLeft},
-    {.name = "key_stickright",    .type = CONFIG_TYPE_UINT, .uintValue = &configKeyStickRight},
+    { .name = "draw_sky", .type = CONFIG_TYPE_BOOL, .boolValue = &configDrawSky },
+    { .name = "texture_filtering", .type = CONFIG_TYPE_BOOL, .boolValue = &configFiltering },
+    { .name = "enable_fog", .type = CONFIG_TYPE_BOOL, .boolValue = &configEnableFog },
+    { .name = "enable_120p_mode", .type = CONFIG_TYPE_BOOL, .boolValue = &config120pMode },
+    { .name = "enable_80p_mode", .type = CONFIG_TYPE_BOOL, .boolValue = &config80pMode },
+    { .name = "skip_z_test", .type = CONFIG_TYPE_BOOL, .boolValue = &configSkipZTest },
+    { .name = "affine_mode", .type = CONFIG_TYPE_BOOL, .boolValue = &configAffineMode },
+    { .name = "overclock", .type = CONFIG_TYPE_BOOL, .boolValue = &configOverclock },
+    { .name = "persp_span", .type = CONFIG_TYPE_UINT, .uintValue = &configPerspSpan },
+    { .name = "flat_shade_dist", .type = CONFIG_TYPE_UINT, .uintValue = &configFlatShadeDist },
+    { .name = "frameskip", .type = CONFIG_TYPE_UINT, .uintValue = &configFrameskip },
+    { .name = "key_a", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyA },
+    { .name = "key_b", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyB },
+    { .name = "key_start", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyStart },
+    { .name = "key_r", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyR },
+    { .name = "key_z", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyZ },
+    { .name = "key_cup", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyCUp },
+    { .name = "key_cdown", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyCDown },
+    { .name = "key_cleft", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyCLeft },
+    { .name = "key_cright", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyCRight },
+    { .name = "key_stickup", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyStickUp },
+    { .name = "key_stickdown", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyStickDown },
+    { .name = "key_stickleft", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyStickLeft },
+    { .name = "key_stickright", .type = CONFIG_TYPE_UINT, .uintValue = &configKeyStickRight },
 };
 
 // Reads an entire line from a file (excluding the newline character) and returns an allocated string
